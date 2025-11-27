@@ -76,8 +76,8 @@ fun MainScreen() {
     val navItems = listOf(
         NavigationItem("首页", R.mipmap.menu_main),
         NavigationItem("项目", R.mipmap.menu_project),
+        NavigationItem("广场", R.mipmap.menu_tree),
         NavigationItem("公众号", R.mipmap.menu_public),
-        NavigationItem("体系", R.mipmap.menu_tree),
         NavigationItem("我的", R.mipmap.menu_me)
     )
     
@@ -174,8 +174,8 @@ fun MainScreen() {
             when (selectedIndex) {
                 0 -> HomePage()
                 1 -> ProjectPage()
-                2 -> PublicPage()
-                3 -> TreePage()
+                2 -> TreePage()
+                3 -> PublicPage()
                 4 -> MinePage()
             }
         }
