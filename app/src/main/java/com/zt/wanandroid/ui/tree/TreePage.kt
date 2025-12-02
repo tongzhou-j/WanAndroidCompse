@@ -6,11 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,27 +18,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabPosition
-import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,17 +43,18 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zt.wanandroid.R
-import com.zt.wanandroid.ui.home.model.Article
-import com.zt.wanandroid.ui.tree.model.NavigationResponse
-import com.zt.wanandroid.ui.tree.model.SystemResponse
+import com.zt.wanandroid.ui.tree.pages.AskPage
+import com.zt.wanandroid.ui.tree.pages.NavigationPage
+import com.zt.wanandroid.ui.tree.pages.SquarePage
+import com.zt.wanandroid.ui.tree.pages.SystemPage
 import com.zt.wanandroid.ui.tree.viewmodel.TreeUiState
 import com.zt.wanandroid.ui.tree.viewmodel.TreeViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 广场页面
@@ -76,10 +69,18 @@ fun TreePage(
     val systemList by viewModel.systemList.collectAsState()
     val navigationList by viewModel.navigationList.collectAsState()
     
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    val tabs = listOf("广场", "每日一问", "体系", "导航")
+    
+    // 使用 rememberPagerState 来管理页面状态，支持缓存
+    val pagerState = rememberPagerState(
+        initialPage = 0,
+        pageCount = { tabs.size }
+    )
+    
     var animationTrigger by remember { mutableFloatStateOf(0f) }
     
-    val tabs = listOf("广场", "每日一问", "体系", "导航")
+    // 同步 Pager 页面变化到 Tab 选择
+    val selectedTabIndex = pagerState.currentPage
     
     // 初始化时加载默认Tab（广场）的数据
     LaunchedEffect(Unit) {
@@ -87,6 +88,35 @@ fun TreePage(
             viewModel.loadSquareData()
         }
     }
+    
+    // 监听页面切换，加载对应数据
+    LaunchedEffect(pagerState.currentPage) {
+        when (pagerState.currentPage) {
+            0 -> {
+                if (squareList.isEmpty()) {
+                    viewModel.loadSquareData()
+                }
+            }
+            1 -> {
+                if (askList.isEmpty()) {
+                    viewModel.loadAskData()
+                }
+            }
+            2 -> {
+                if (systemList.isEmpty()) {
+                    viewModel.loadSystemData()
+                }
+            }
+            3 -> {
+                if (navigationList.isEmpty()) {
+                    viewModel.loadNavigationData()
+                }
+            }
+        }
+    }
+    
+    // 获取协程作用域
+    val coroutineScope = rememberCoroutineScope()
     
     // 获取屏幕宽度
     val configuration = LocalConfiguration.current
@@ -121,7 +151,7 @@ fun TreePage(
                 indicator = { tabPositions ->
                     CustomTreeTabIndicator(
                         tabPositions = tabPositions,
-                        selectedTabIndex = selectedTabIndex,
+                        selectedTabIndex = pagerState.currentPage,
                         animationTrigger = animationTrigger
                     )
                 },
@@ -132,15 +162,10 @@ fun TreePage(
                         selected = selectedTabIndex == index,
                         onClick = {
                             if (selectedTabIndex != index) {
-                                selectedTabIndex = index
                                 animationTrigger += 1f
-                                
-                                // 根据选择的标签加载数据
-                                when (index) {
-                                    0 -> viewModel.loadSquareData()
-                                    1 -> viewModel.loadAskData()
-                                    2 -> viewModel.loadSystemData()
-                                    3 -> viewModel.loadNavigationData()
+                                // 使用协程切换到指定页面
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(index)
                                 }
                             }
                         },
@@ -182,7 +207,7 @@ fun TreePage(
             }
         }
         
-        // 内容区域
+        // 内容区域 - 使用 HorizontalPager 实现左右滑动切换和页面缓存
         when (uiState) {
             is TreeUiState.Loading -> {
                 Box(
@@ -195,11 +220,21 @@ fun TreePage(
                 }
             }
             is TreeUiState.Success -> {
-                when (selectedTabIndex) {
-                    0 -> SquareList(articles = squareList)
-                    1 -> AskList(articles = askList)
-                    2 -> TreeList(systemList = systemList)
-                    3 -> NavigationList(navigationList = navigationList)
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    // 使用 key 来保持每个页面的状态，实现页面缓存
+                    key = { index -> tabs[index] }
+                ) { page ->
+                    // 根据页面索引显示对应的内容，HorizontalPager 会自动缓存页面状态
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        when (page) {
+                            0 -> SquarePage(articles = squareList)
+                            1 -> AskPage(articles = askList)
+                            2 -> SystemPage(systemList = systemList)
+                            3 -> NavigationPage(navigationList = navigationList)
+                        }
+                    }
                 }
             }
             is TreeUiState.Error -> {
@@ -272,352 +307,3 @@ fun CustomTreeTabIndicator(
             .background(Color.White, RoundedCornerShape(1.5.dp))
     )
 }
-
-
-/**
- * 广场文章列表
- */
-@Composable
-fun SquareList(articles: List<Article>) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        items(articles) { article ->
-            SquareArticleItem(article = article)
-        }
-    }
-}
-
-/**
- * 广场文章列表项
- */
-@Composable
-fun SquareArticleItem(article: Article) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clickable { /* 处理点击事件 */ },
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            // 标题
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (article.fresh) {
-                    Text(
-                        text = "新",
-                        color = Color.Red,
-                        fontSize = 12.sp,
-                        modifier = Modifier
-                            .background(
-                                color = Color.Red.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(4.dp)
-                            )
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                    Spacer(modifier = Modifier.padding(4.dp))
-                }
-                
-                Text(
-                    text = article.title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF333333),
-                    maxLines = 2
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // 作者和时间
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = article.getAuthorName(),
-                    fontSize = 12.sp,
-                    color = Color(0xFF999999)
-                )
-                
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (article.getCategoryName().isNotEmpty()) {
-                        Text(
-                            text = article.getCategoryName(),
-                            fontSize = 12.sp,
-                            color = colorResource(id = R.color.colorPrimary)
-                        )
-                        Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                    }
-                    
-                    Text(
-                        text = article.niceDate,
-                        fontSize = 12.sp,
-                        color = Color(0xFF999999)
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * 每日一问文章列表
- */
-@Composable
-fun AskList(articles: List<Article>) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        items(articles) { article ->
-            AskArticleItem(article = article)
-        }
-    }
-}
-
-/**
- * 每日一问文章列表项
- */
-@Composable
-fun AskArticleItem(article: Article) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clickable { /* 处理点击事件 */ },
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            // 标题
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (article.fresh) {
-                    Text(
-                        text = "新",
-                        color = Color.Red,
-                        fontSize = 12.sp,
-                        modifier = Modifier
-                            .background(
-                                color = Color.Red.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(4.dp)
-                            )
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                    Spacer(modifier = Modifier.padding(4.dp))
-                }
-                
-                Text(
-                    text = article.title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF333333),
-                    maxLines = 2
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // 作者和时间
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = article.getAuthorName(),
-                    fontSize = 12.sp,
-                    color = Color(0xFF999999)
-                )
-                
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (article.getCategoryName().isNotEmpty()) {
-                        Text(
-                            text = article.getCategoryName(),
-                            fontSize = 12.sp,
-                            color = colorResource(id = R.color.colorPrimary)
-                        )
-                        Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                    }
-                    
-                    Text(
-                        text = article.niceDate,
-                        fontSize = 12.sp,
-                        color = Color(0xFF999999)
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * 体系列表
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun TreeList(systemList: List<SystemResponse>) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        items(systemList) { system ->
-            TreeItemView(system = system)
-        }
-    }
-}
-
-/**
- * 体系列表项
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun TreeItemView(system: SystemResponse) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clickable { /* 处理点击事件 */ },
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            // 一级分类标题
-            Text(
-                text = system.name,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF333333)
-            )
-            
-            // 二级分类标签
-            if (system.children.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    system.children.forEach { child ->
-                        Box(
-                            modifier = Modifier
-                                .padding(end = 8.dp, bottom = 8.dp)
-                                .background(
-                                    color = colorResource(id = R.color.colorPrimary).copy(alpha = 0.1f),
-                                    shape = RoundedCornerShape(4.dp)
-                                )
-                                .clickable { /* 处理点击事件 */ }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = child.name,
-                                fontSize = 12.sp,
-                                color = colorResource(id = R.color.colorPrimary)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * 导航列表
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun NavigationList(navigationList: List<NavigationResponse>) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        items(navigationList) { navigation ->
-            NavigationItemView(navigation = navigation)
-        }
-    }
-}
-
-/**
- * 导航列表项
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun NavigationItemView(navigation: NavigationResponse) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            // 导航分类标题
-            Text(
-                text = navigation.name,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF333333)
-            )
-            
-            // 文章链接标签
-            if (navigation.articles.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    navigation.articles.forEach { article ->
-                        Box(
-                            modifier = Modifier
-                                .padding(end = 8.dp, bottom = 8.dp)
-                                .background(
-                                    color = colorResource(id = R.color.colorPrimary).copy(alpha = 0.1f),
-                                    shape = RoundedCornerShape(4.dp)
-                                )
-                                .clickable { /* 处理点击事件，打开文章链接 */ }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = article.title,
-                                fontSize = 12.sp,
-                                color = colorResource(id = R.color.colorPrimary),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
